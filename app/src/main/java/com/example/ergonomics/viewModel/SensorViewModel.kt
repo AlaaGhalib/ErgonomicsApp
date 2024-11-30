@@ -1,20 +1,31 @@
-import androidx.lifecycle.MutableLiveData
+import android.content.Context
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
 import androidx.lifecycle.ViewModel
-import com.example.ergonomics.model.SensorData
+import com.example.ergonomics.model.SensorRepository
 
-class SensorViewModel : ViewModel() {
-    val sensorDataList = MutableLiveData<MutableList<SensorData>>()
-    private val data = mutableListOf<SensorData>()
+// ViewModel to handle the logic and sensor data processing
+class SensorViewModel : ViewModel(), SensorEventListener {
+    private val sensorRepository: SensorRepository = SensorRepository()
 
-    fun addSensorData(sensorData: SensorData) {
-        data.add(sensorData)
-        sensorDataList.value = data
+    fun startMeasurement() {
+        sensorRepository.startMeasurement()
     }
 
-    fun clearSensorData() {
-        data.clear()
-        sensorDataList.value = data
+    fun stopMeasurement() {
+        sensorRepository.stopMeasurement()
     }
 
-    // Export logic can also be handled here if needed
+    override fun onSensorChanged(event: SensorEvent) {
+        sensorRepository.onSensorChanged(event)
+    }
+
+    override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {
+        // Not needed for this implementation
+    }
+
+    fun exportData(context: Context) {
+        sensorRepository.exportData(context)
+    }
 }
