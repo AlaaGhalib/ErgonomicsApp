@@ -1,9 +1,11 @@
+import android.content.ContentValues
 import android.content.Context
 import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.os.Environment
+import android.provider.MediaStore
 import android.widget.Toast
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
@@ -13,7 +15,9 @@ import java.io.FileWriter
 import java.io.IOException
 import kotlin.math.atan2
 import kotlin.math.sqrt
+
 import com.github.mikephil.charting.data.Entry
+import java.io.FileOutputStream
 
 class SensorViewModel(private val context: Context) : ViewModel(), SensorEventListener {
     private var alpha = 0.3f  // Filter factor between 0 and 1 (tune as necessary)
@@ -90,27 +94,25 @@ class SensorViewModel(private val context: Context) : ViewModel(), SensorEventLi
         return alpha * accelAngle + (1 - alpha) * gyroAngle
     }
 
-    fun exportData(context: Context) {
-        val fileName = "ergonomics_data.csv"
-        val exportDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS)
-        if (!exportDir.exists()) {
-            exportDir.mkdirs()
+    fun saveFileInDownloads(context: Context, fileName: String, content: String) {
+        val resolver = context.contentResolver
+        val contentValues = ContentValues().apply {
+            put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
+            put(MediaStore.MediaColumns.MIME_TYPE, "text/plain")
+            put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
         }
-        val file = File(exportDir, fileName)
 
-        try {
-            val writer = FileWriter(file)
-            writer.append("Time,EWMA Angle,Complementary Angle\n")
-            val maxSize = maxOf(ewmaAngleList.size, complementaryAngleList.size)
-            for (i in 0 until maxSize) {
-                val ewmaValue = if (i < ewmaAngleList.size) ewmaAngleList[i] else ""
-                val complementaryValue = if (i < complementaryAngleList.size) complementaryAngleList[i] else ""
-                writer.append("$i,$ewmaValue,$complementaryValue\n")
+        val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, contentValues)
+        uri?.let {
+            resolver.openOutputStream(it)?.use { outputStream ->
+                outputStream.write(content.toByteArray())
             }
-            writer.flush()
-            writer.close()
-        } catch (e: IOException) {
-            e.printStackTrace()
+            println("File saved to Downloads: $uri")
         }
+    }
+
+    fun exportData(context: Context) {
+        val contentToMap = ewmaAngleList.map { it.toString() }.joinToString { "\n" }
+        saveFileInDownloads(context, "Test", contentToMap)
     }
 }

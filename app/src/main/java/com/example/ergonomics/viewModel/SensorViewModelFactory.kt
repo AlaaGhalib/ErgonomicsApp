@@ -13,4 +13,3 @@ class SensorViewModelFactory(private val context: Context) : ViewModelProvider.F
         throw IllegalArgumentException("Unknown ViewModel class")
     }
 }
-
