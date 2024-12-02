@@ -1,5 +1,5 @@
 package com.example.ergonomics
-
+import SensorViewModel
 import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -13,3 +13,4 @@ class SensorViewModelFactory(private val context: Context) : ViewModelProvider.F
         throw IllegalArgumentException("Unknown ViewModel class")
     }
 }
+

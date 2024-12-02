@@ -1,6 +1,8 @@
 package com.example.ergonomics
 
+import SensorViewModel
 import android.Manifest
+import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.Color
 import android.os.Bundle
@@ -10,11 +12,11 @@ import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Observer
-import androidx.lifecycle.ViewModelProvider
 import com.github.mikephil.charting.charts.LineChart
 import com.github.mikephil.charting.data.Entry
 import com.github.mikephil.charting.data.LineData
@@ -22,20 +24,17 @@ import com.github.mikephil.charting.data.LineDataSet
 import com.github.mikephil.charting.components.XAxis
 
 class MainActivity : AppCompatActivity() {
-
     private lateinit var startButton: Button
     private lateinit var stopButton: Button
+    private lateinit var exportButton: Button
     private lateinit var chart: LineChart
-    private lateinit var sensorViewModel: SensorViewModel
-    private val angleEntries = mutableListOf<Entry>()
+    private val sensorViewModel: SensorViewModel by viewModels { SensorViewModelFactory(applicationContext) }
+    private val ewmaAngleEntries = mutableListOf<Entry>()
+    private val complementaryAngleEntries = mutableListOf<Entry>()
     private var entryIndex = 0f
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
-        // Use the ViewModelFactory to pass context
-        val factory = SensorViewModelFactory(applicationContext)
-        sensorViewModel = ViewModelProvider(this, factory).get(SensorViewModel::class.java)
 
         // Create Layout Programmatically
         val layout = LinearLayout(this).apply {
@@ -83,14 +82,21 @@ class MainActivity : AppCompatActivity() {
         }
 
         // Add initial empty dataset
-        val lineDataSet = LineDataSet(angleEntries, "Elevation Angle").apply {
+        val ewmaLineDataSet = LineDataSet(ewmaAngleEntries, "EWMA Angle").apply {
+            color = Color.RED
+            setCircleColor(Color.RED)
+            lineWidth = 2f
+            setDrawCircles(false)
+            setDrawValues(false)
+        }
+        val complementaryLineDataSet = LineDataSet(complementaryAngleEntries, "Complementary Angle").apply {
             color = Color.BLUE
             setCircleColor(Color.BLUE)
             lineWidth = 2f
             setDrawCircles(false)
             setDrawValues(false)
         }
-        chart.data = LineData(lineDataSet)
+        chart.data = LineData(ewmaLineDataSet, complementaryLineDataSet)
 
         // Initialize UI elements programmatically
         startButton = Button(this).apply {
@@ -121,34 +127,73 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        exportButton = Button(this).apply {
+            text = "Export Data"
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+            setOnClickListener {
+                if (checkPermission()) {
+                    sensorViewModel.exportData(this@MainActivity)
+                } else {
+                    requestPermission()
+                }
+            }
+        }
 
         // Add views to layout
         layout.addView(titleTextView)
         layout.addView(chart)
         layout.addView(startButton)
         layout.addView(stopButton)
+        layout.addView(exportButton)
 
         // Set the layout as the content view
         setContentView(layout)
 
         // Observe real-time sensor data
-        sensorViewModel.angleLiveData.observe(this, Observer { angle ->
-            addEntryToChart(angle)
+        sensorViewModel.ewmaAngleLiveData.observe(this, Observer { angle ->
+            addEntryToChart(angle, isEwma = true)
+        })
+        sensorViewModel.complementaryAngleLiveData.observe(this, Observer { angle ->
+            addEntryToChart(angle, isEwma = false)
         })
     }
 
-    private fun addEntryToChart(angle: Float) {
-        angleEntries.add(Entry(entryIndex++, angle))
-        val lineDataSet = LineDataSet(angleEntries, "Elevation Angle").apply {
+    private fun addEntryToChart(angle: Float, isEwma: Boolean) {
+        val normalizedAngle = normalizeAngle(angle)
+        if (isEwma) {
+            ewmaAngleEntries.add(Entry(entryIndex, normalizedAngle))
+        } else {
+            complementaryAngleEntries.add(Entry(entryIndex, normalizedAngle))
+        }
+        entryIndex++
+
+        val ewmaLineDataSet = LineDataSet(ewmaAngleEntries, "EWMA Angle").apply {
+            color = Color.RED
+            setCircleColor(Color.RED)
+            lineWidth = 2f
+            setDrawCircles(false)
+            setDrawValues(false)
+        }
+        val complementaryLineDataSet = LineDataSet(complementaryAngleEntries, "Complementary Angle").apply {
             color = Color.BLUE
             setCircleColor(Color.BLUE)
             lineWidth = 2f
             setDrawCircles(false)
             setDrawValues(false)
         }
-        chart.data = LineData(lineDataSet)
+        chart.data = LineData(ewmaLineDataSet, complementaryLineDataSet)
         chart.notifyDataSetChanged()
-        chart.invalidate()
+        chart.invalidate() // Refresh chart
+    }
+
+    private fun normalizeAngle(angle: Float): Float {
+        // Normalize the angle to fit in a comparable range [0, 1]
+        val minAngle = -90f // Assuming minimum angle is -90 degrees
+        val maxAngle = 90f  // Assuming maximum angle is 90 degrees
+        return (angle - minAngle) / (maxAngle - minAngle)
     }
 
     private fun checkPermission(): Boolean {
