@@ -10,6 +10,7 @@ import android.widget.Toast
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
+import com.example.ergonomics.model.SensorData
 import java.io.File
 import java.io.FileWriter
 import java.io.IOException
@@ -32,8 +33,7 @@ class SensorViewModel(private val context: Context) : ViewModel(), SensorEventLi
     private var previousGyroAngle = 0.0f
     private var scalingFactor = 10f
 
-    private val ewmaAngleList = mutableListOf<Float>()
-    private val complementaryAngleList = mutableListOf<Float>()
+    private val sensorDataList = mutableListOf<SensorData>()
 
     private val sensorManager: SensorManager = context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
     private val accelerometer: Sensor? = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
@@ -61,16 +61,21 @@ class SensorViewModel(private val context: Context) : ViewModel(), SensorEventLi
     }
 
     override fun onSensorChanged(event: SensorEvent) {
+        val timestamp = System.currentTimeMillis()
+
         if (event.sensor.type == Sensor.TYPE_ACCELEROMETER) {
             val angle = calculateAngleUsingAccelerometer(event.values[0], event.values[1], event.values[2])
-            // Apply EWMA filter to accelerometer angle
             val ewmaAngle = applyEWMAFilter(angle)
-            _ewmaAngleLiveData.value = ewmaAngle * scalingFactor // Apply scaling factor to EWMA
+            val sensorData = SensorData(timestamp, ewmaAngle, "Linear")
+            sensorDataList.add(sensorData) // Spara datan i listan
+            _ewmaAngleLiveData.value = ewmaAngle
         } else if (event.sensor.type == Sensor.TYPE_GYROSCOPE) {
-            val gyroAngle = event.values[1]  // Example assuming y-axis is used
+            val gyroAngle = event.values[1] // Y-axeln
             val complementaryAngle = applyComplementaryFilter(previousGyroAngle, gyroAngle)
             previousGyroAngle = gyroAngle
-            _complementaryAngleLiveData.value = complementaryAngle * scalingFactor // Apply scaling factor to complementary filter
+            val sensorData = SensorData(timestamp, complementaryAngle, "Linear+Gyroscope")
+            sensorDataList.add(sensorData) // Spara datan i listan
+            _complementaryAngleLiveData.value = complementaryAngle
         }
     }
 
@@ -90,29 +95,25 @@ class SensorViewModel(private val context: Context) : ViewModel(), SensorEventLi
     }
 
     private fun applyComplementaryFilter(accelAngle: Float, gyroAngle: Float): Float {
-        // Complimentary filter for sensor fusion
         return alpha * accelAngle + (1 - alpha) * gyroAngle
     }
 
-    fun saveFileInDownloads(context: Context, fileName: String, content: String) {
-        val resolver = context.contentResolver
-        val contentValues = ContentValues().apply {
-            put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
-            put(MediaStore.MediaColumns.MIME_TYPE, "text/plain")
-            put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+    fun exportData(context: Context) {
+        val content = sensorDataList.map {
+            "${it.timestamp}, ${it.elevationAngle}, ${it.algorithmType}"
         }
-
-        val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, contentValues)
-        uri?.let {
-            resolver.openOutputStream(it)?.use { outputStream ->
-                outputStream.write(content.toByteArray())
-            }
-            println("File saved to Downloads: $uri")
-        }
+        saveFileInDownloads(context, content, "sensor_data_export")
     }
 
-    fun exportData(context: Context) {
-        val contentToMap = ewmaAngleList.map { it.toString() }.joinToString { "\n" }
-        saveFileInDownloads(context, "Test", contentToMap)
+    private fun saveFileInDownloads(context: Context, content: List<String>, fileName: String) : File {
+        val fileToStore = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "$fileName.csv")
+
+        val write = FileWriter(fileToStore)
+        write.write("Timestamp, EWMA Angle, Algorithm Type\n")
+        content.forEach { write.write(it + "\n") }
+        write.flush()
+        write.close()
+
+        return fileToStore
     }
 }
